@@ -1,0 +1,97 @@
+% energy of the system (scalar)
+% momentum of the system (vec3d)
+%
+% 1. obj load
+% 2. springs for each edge / visualize springs
+% 3. gravity (energy (mgy) and force (mg))
+% 4. add pinned verts (infinite mass)
+% 5. plot energy and momentum
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% A Point consists of a 
+%	position vector, 
+%	velocity vector, 
+%	mass scalar
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+element Point
+  position : tensor[3](float);
+  velocity : tensor[3](float);
+  mass : float;
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% A Spring has an associated
+%	spring constant k,
+%	resting length L_0
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+element Spring
+  k  : float;
+  L_0 : float;
+  strain : float; % for localizing to please the compiler
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% The simulation consists of a set of Points
+% and a set of Springs per Point pair
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+extern points  : set{Point};
+extern springs : set{Spring}(points,points);
+
+% Green strain, ε = || L^2 - (L_0)^2 || / ((L_0)^2)
+func compute_strain(s : Spring, p : (Point*2) ) -> (str : tensor[springs](float))
+
+  L = p(0).position - p(1).position;
+  L2 = dot(L,L);
+  str(s) = (L2 - s.L_0*s.L_0)/(s.L_0*s.L_0*2.0);
+  
+end
+
+% Potential energy, E =  ½kε^2
+func compute_energy(s : Spring, p : (Point*2) ) -> (pe : tensor[springs](float))
+
+  pe(s) = 0.5 * s.k * s.strain*s.strain;    
+
+end
+
+% dE/dp_i = (1 / (2L_0)) (2p_i - 2p_j);
+func compute_deriv_energy(s : Spring, p : (Point*2)) -> (de : tensor[springs,points](tensor[3](float)))
+
+  de(s,p(0)) = (1.0 / (2.0*s.L_0)) * (2.0*p(0).position - 2.0*p(1).position);
+  de(s,p(1)) = (1.0 / (2.0*s.L_0)) * (2.0*p(1).position - 2.0*p(0).position);
+
+end
+
+% F_(p_i) = -kε(dE/dp_i)
+func compute_force(s : Spring, p : (Point*2)) -> (f : tensor[points](tensor[3](float)))
+
+  de1 = (1.0 / (2.0*s.L_0)) * (2.0*p(0).position - 2.0*p(1).position);
+  de2 = (1.0 / (2.0*s.L_0)) * (2.0*p(1).position - 2.0*p(0).position);  
+  f(p(0)) = -s.k*s.strain*de1;
+  f(p(1)) = -s.k*s.strain*de2;
+
+end
+
+% m^-1 = 1/m
+func compute_Minv(p : Point) -> (Minv : tensor[points,points](tensor[3,3](float)))
+
+  Minv(p,p) = (1.0/p.mass) * [1.0, 0.0, 0.0; 
+  							  0.0, 1.0, 0.0; 
+  							  0.0, 0.0, 1.0];
+
+end
+
+proc main()
+
+  h = 1e-5;
+  Minv = map compute_Minv to points reduce +;
+  points.position = points.position + h * points.velocity;
+  calc_strain = map compute_strain to springs reduce +;    
+  springs.strain = calc_strain;
+  energy = map compute_energy to springs reduce +;
+%% The dEnergy function has been merged into force to please the compiler  
+%% isa<TupleRead>(index) error
+%%dEnergy = map compute_deriv_energy to springs reduce +;
+  force = map compute_force to springs reduce +;
+  points.velocity = points.velocity + h * (Minv * force);
+ 
+end

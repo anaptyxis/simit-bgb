@@ -13,14 +13,15 @@
 using namespace std;
 
 const int spacing = 2;
-const int spr_k = 1e6;
+const int spr_k = 1e4;
 
 float angleX = 0.f;
 float angleY = 0.f;
 float angleZ = 0.f;
+float zoom = 1.5f;
 float panX = 0.f;
 float panY = 0.f;
-float zoom = 1.25f;
+
 
 double xpos = -1, ypos = -1;
 bool spinning = false;
@@ -108,12 +109,15 @@ SpringSystem::SpringSystem() : points(), springs(points,points) {
 
 void SpringSystem::load() {
 
+	srand ( time(NULL) );
     //DBG//cout<<"Setting field references\n";	
     simit::FieldRef<simit_float,3> position = 
     	points.addField<simit_float,3>("position");
     simit::FieldRef<simit_float,3> velocity = 
     	points.addField<simit_float,3>("velocity");
     simit::FieldRef<simit_float> mass = points.addField<simit_float>("mass");
+    simit::FieldRef<bool> pinned = points.addField<bool>("pinned");
+    
 
     simit::FieldRef<simit_float> k = springs.addField<simit_float>("k");
     simit::FieldRef<simit_float> L_0 = springs.addField<simit_float>("L_0");
@@ -121,6 +125,7 @@ void SpringSystem::load() {
     	springs.addField<simit_float>("strain");
 
     vector<simit::ElementRef> pointRefs;
+    bool pinStart = true;
     for(auto v : mesh.v) {
         pointRefs.push_back(points.add());
         simit::ElementRef pRef = pointRefs.back();
@@ -128,7 +133,15 @@ void SpringSystem::load() {
         //DBG//cout << v[0] << v[1] << v[2] << endl;
         position.set(pRef, {v[0], v[1], v[2]});
       	velocity.set(pRef, {0.0, 0.0, 0.0});
-      	mass.set(pRef, 1.0);
+      	//((rand() % 10) < 2);
+      	if (pinStart) {
+      		mass.set(pRef, numeric_limits<float>::infinity());
+	      	pinned.set(pRef, true);     
+	      	pinStart = false; 		
+		} else {
+	      	mass.set(pRef, 1.0);
+      		pinned.set(pRef, false);
+      	}
 	}
 
     for(auto e : mesh.edges) {
@@ -147,8 +160,9 @@ void SpringSystem::load() {
 		//DBG//	 << pA[1] << " " << pB[1] <<endl
 		//DBG//	 << pA[2] << " " << pB[2] <<endl;        								
         //DBG//cout << spr_L0 << endl;
-        float stretch = (rand() % 10)/100.0; 	//add random stretch to springs
-        L_0.set(sRef, spr_L0*(1+stretch));
+//        float stretch = ((rand() % 20)-1.f)/100.0; 	//add random stretch to springs
+		float stretch = 0.f;
+        L_0.set(sRef, spr_L0*(1.f+stretch));
         k.set(sRef, spr_k);
         strain.set(sRef, 0);
     }
@@ -179,7 +193,7 @@ void SpringSystem::load() {
     
 void SpringSystem::step() {
 
-	int numSteps = 10000;
+	int numSteps = -1;		// negative for unbounded
 
 	GLFWwindow* window;
 	glfwSetErrorCallback(error_callback);
@@ -208,7 +222,7 @@ void SpringSystem::step() {
 		glClear(GL_COLOR_BUFFER_BIT);
 		glMatrixMode(GL_PROJECTION);
 		glLoadIdentity();
-		glOrtho(-ratio, ratio, -1.f, 1.f, 1.f, -1.f);
+		glOrtho(-ratio, ratio, -1.f, 1.f, 10.f, -10.f);
 		glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity();
 		if (spinning) {
@@ -237,6 +251,8 @@ void SpringSystem::step() {
 		if (numSteps > 0) {
 			timeStepper.run();
 			numSteps--;
+		} else if (numSteps < 0) {
+			timeStepper.run();
 		}
   
 		//DBG//cout << "Position : Velocity " << endl;
@@ -244,16 +260,20 @@ void SpringSystem::step() {
 			points.getField<simit_float,3>("position");
 		simit::FieldRef<simit_float,3> vel = 
 			points.getField<simit_float,3>("velocity");
+		simit::FieldRef<bool> pin = 
+			points.getField<bool>("pinned");
 
-		glColor3f(0.f,0.f,0.f);
-		glPointSize(8.f);
+		glPointSize(4.f*zoom);
 		glBegin(GL_POINTS);
 		for (auto p : points) {
 			//DBG//cout << pos.get(p) << " : " << vel.get(p) << endl;
-		
-			glVertex3f((pos.get(p)(0)-spacing/2)/spacing*1.5, 
-						(pos.get(p)(1)-spacing/2)/spacing*1.5, 
-						(pos.get(p)(2)-spacing/2)/spacing*1.5);
+		if (pin.get(p))
+			glColor3f(1.f,0.f,0.f);
+		else
+			glColor3f(0.f,0.f,0.f);
+			glVertex3f((pos.get(p)(0)-spacing/2)/spacing, 
+   					   (pos.get(p)(1)-spacing/2)/spacing, 
+					   (pos.get(p)(2)-spacing/2)/spacing);
 		}
 		glEnd();
 
@@ -265,16 +285,18 @@ void SpringSystem::step() {
 
 		glColor3f(0.5f, 0.5f, 0.5f);
 		glLineWidth(2.f);
+		int springCounter = 0;
 		for (auto s : springs) {
+//			glColor3f(0.5f, (springCounter++/(float)springs.getSize()), 0.5f);
 			simit::ElementRef ep0 = springs.getEndpoint(s,0);
 			simit::ElementRef ep1 = springs.getEndpoint(s,1);
 			glBegin(GL_LINES);
-			glVertex3f((pos.get(ep0)(0)-spacing/2)/spacing*1.5, 
-						(pos.get(ep0)(1)-spacing/2)/spacing*1.5, 
-						(pos.get(ep0)(2)-spacing/2)/spacing*1.5);
-			glVertex3f((pos.get(ep1)(0)-spacing/2)/spacing*1.5, 
-						(pos.get(ep1)(1)-spacing/2)/spacing*1.5, 
-						(pos.get(ep1)(2)-spacing/2)/spacing*1.5);						
+			glVertex3f((pos.get(ep0)(0)-spacing/2)/spacing, 
+						(pos.get(ep0)(1)-spacing/2)/spacing, 
+						(pos.get(ep0)(2)-spacing/2)/spacing);
+			glVertex3f((pos.get(ep1)(0)-spacing/2)/spacing, 
+						(pos.get(ep1)(1)-spacing/2)/spacing, 
+						(pos.get(ep1)(2)-spacing/2)/spacing);						
 			glEnd();
 			//DBG//cout << pos.get(ep0) << ", " << pos.get(ep1) << endl;
 			//DBG//cout << str.get(s) << endl;
@@ -308,43 +330,36 @@ bool SpringSystem::loadObject(const char * file_name) {
         return false;
     }
 
-    // num of vertices and indices
-    //fscanf( fp, "data%d%d", &number_vertices, &number_faces);
-
-       
-    //push the content into the vertices
 	float x_temp, y_temp, z_temp;
-	char* obj_id;
+	int a,b,c;
+	char* type;
+	int faceCount = 0;
+	int EOFp;
 
-    int EOFp = fscanf( fp, "%s %f %f %f ", obj_id, &x_temp, &y_temp,&z_temp );
-  
-	while ((obj_id[0] == 'v') && (obj_id[1] != 'n')){
-		if (EOFp == EOF) break;
-		mesh.v.push_back({static_cast<simit_float>(x_temp), 
-			static_cast<simit_float>(y_temp), 
-			static_cast<simit_float>(z_temp)});
-        EOFp = fscanf( fp, "%s %f %f %f ", obj_id, &x_temp, &y_temp,&z_temp );
-    } 
+	EOFp = fscanf( fp, "%s", type );
+	while ((EOFp != EOF) && (strcmp( type, "" ) != 0)) {
+	    //push the content into the vertices
+		if (strcmp( type, "v" ) == 0) {
+			fscanf( fp, "%f %f %f", &x_temp, &y_temp, &z_temp );
+			mesh.v.push_back({static_cast<simit_float>(x_temp), 
+				static_cast<simit_float>(y_temp), 
+				static_cast<simit_float>(z_temp)});
+ 		}
+	    //push the face content into the edges
+ 		if (strcmp( type, "f" ) == 0) {
+			fscanf( fp, "%d %d %d", &a, &b, &c );
+			mesh.edges.push_back({a, b});
+			mesh.edges.push_back({b, c});
+			mesh.edges.push_back({c, a});
+			faceCount++;
+ 		}
+		EOFp = fscanf( fp, "%s", type ); 
+ 	}
+ 
+	cout << "Number of vertices loaded: " << mesh.v.size() << endl;
+	cout << "Number of edges loaded: " << mesh.edges.size() << endl;
+	cout << "Number of faces loaded: " << faceCount << endl;
 
-    cout << endl;
-	while ((obj_id[0] != 'f') && (EOFp != EOF)) {
-        EOFp = fscanf( fp, "%s", obj_id);
-	}
-    cout << endl;
-    
-    int a,b,c;
-
-    //push the face content into the edges
-    while (obj_id[0] == 'f') {
-        EOFp = fscanf( fp, "%s %d %d %d", obj_id, &a, &b, &c);
-		if (EOFp == EOF) break;
-		mesh.edges.push_back({a, b});
-		mesh.edges.push_back({b, c});
-		mesh.edges.push_back({a, c});
-    } 
-
-cout << "Number of vertices loaded: " << mesh.v.size() << endl;
-cout << "Number of edges loaded: " << mesh.edges.size() << endl;
 	return true;
 }
 

@@ -1,0 +1,1 @@
+/Users/bradleybeth/src/git/simit-bgb/Elastic2D/simit/build/CMakeFiles/Elastic2D.dir

@@ -1,0 +1,107 @@
+% energy of the system (scalar)
+% momentum of the system (vec3d)
+%
+% 1. plot energy and momentum
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% A Point consists of a 
+%	position vector, 
+%	velocity vector, 
+%	mass scalar
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+element Point
+  position : tensor[3](float);
+  velocity : tensor[3](float);
+  mass : float;
+  pinned : bool;
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% A HyperEdge has an associated
+%	spring constant k,
+%	resting length L_0
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+element HyperEdge
+  k  : float;
+  L_0 : float;
+  strain : float; % for localizing to please the compiler
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% The simulation consists of a set of Points
+% and a set of HyperEdges per Point pair
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+extern points  : set{Point};
+extern hyperedges : set{HyperEdge}(points,points,points);
+
+% Green strain, ε = || L^2 - (L_0)^2 || / ((L_0)^2)
+func compute_strain(s : HyperEdge, p : (Point*2) ) -> (str : tensor[hyperedges](float))
+
+  L = p(0).position - p(1).position;
+  L2 = dot(L,L);
+  str(s) = (L2 - s.L_0*s.L_0)/(s.L_0*s.L_0*2.0);
+  
+end
+
+% Potential energy, E =  ½kε^2
+func compute_energy(s : HyperEdge, p : (Point*2) ) -> (pe : tensor[hyperedges](float))
+
+  pe(s) = 0.5 * s.k * s.strain*s.strain;    
+
+end
+
+% dE/dp_i = (1 / (2L_0)) (2p_i - 2p_j);
+func compute_deriv_energy(s : HyperEdge, p : (Point*2)) -> (de : tensor[hyperedges,points](tensor[3](float)))
+
+  de(s,p(0)) = (1.0 / (2.0*s.L_0)) * (2.0*p(0).position - 2.0*p(1).position);
+  de(s,p(1)) = (1.0 / (2.0*s.L_0)) * (2.0*p(1).position - 2.0*p(0).position);
+
+end
+
+% F_(p_i) = -kε(dE/dp_i)
+func compute_force(s : HyperEdge, p : (Point*2)) -> (f : tensor[points](tensor[3](float)))
+
+  de1 = (1.0 / (2.0*s.L_0)) * (2.0*p(0).position - 2.0*p(1).position);
+  de2 = (1.0 / (2.0*s.L_0)) * (2.0*p(1).position - 2.0*p(0).position);  
+  f(p(0)) = -s.k*s.strain*de1;
+  f(p(1)) = -s.k*s.strain*de2;
+
+end
+
+% mg
+func compute_mg(p : Point) -> (mg : tensor[points](tensor[3](float)))
+
+  if (p.pinned)
+  	mg(p) = (1.0/p.mass) * [0.0, 0.0, 0.0];
+  else
+    mg(p) = (p.mass) * [0.0, -9.8, 0.0];
+  end
+end
+
+% m^-1 = 1/m
+func compute_Minv(p : Point) -> (Minv : tensor[points,points](tensor[3,3](float)))
+
+  Minv(p,p) = (1.0/p.mass) * [1.0, 0.0, 0.0; 
+  							  0.0, 1.0, 0.0; 
+  							  0.0, 0.0, 1.0];
+
+end
+
+
+
+proc main()
+
+  h = 1e-4;
+  Minv = map compute_Minv to points;
+  points.position = points.position + h * points.velocity;
+  calc_strain = map compute_strain to hyperedges reduce +;    
+  hyperedges.strain = calc_strain;
+  energy = map compute_energy to hyperedges reduce +;
+%% The dEnergy function has been merged into force to please the compiler  
+%% isa<TupleRead>(index) error
+%%dEnergy = map compute_deriv_energy to hyperedges reduce +;
+  force = map compute_force to hyperedges reduce +;
+  mg = map compute_mg to points;
+  points.velocity = points.velocity + h * (Minv * (force + mg));
+ 
+end

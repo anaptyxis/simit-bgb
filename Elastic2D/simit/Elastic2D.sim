@@ -1,107 +1,167 @@
-% energy of the system (scalar)
-% momentum of the system (vec3d)
+% TODO:
+%   energy of the system (scalar)
+%   momentum of the system (vec3d)
 %
-% 1. plot energy and momentum
+%   1. plot energy and momentum
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+const alpha : float = 1e1;
+const beta : float = 1e4;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % A Point consists of a 
-%	position vector, 
-%	velocity vector, 
-%	mass scalar
+%   position vector, 
+%   velocity vector, 
+%   mass scalar
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 element Point
-  position : tensor[3](float);
-  velocity : tensor[3](float);
-  mass : float;
-  pinned : bool;
+	init_position : tensor[2](float);
+	position : tensor[2](float);
+	velocity : tensor[2](float);
+	mass : float;
+	pinned : bool;
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % A HyperEdge has an associated
-%	spring constant k,
-%	resting length L_0
+%
+%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 element HyperEdge
-  k  : float;
-  L_0 : float;
-  strain : float; % for localizing to please the compiler
+%	u : tensor[2](float);
+%	v : tensor[2](float);
+	strain : tensor[2,2](float); % strain tensor
+	init_area : float;
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % The simulation consists of a set of Points
-% and a set of HyperEdges per Point pair
+% and a set of HyperEdges per Point trio
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 extern points  : set{Point};
 extern hyperedges : set{HyperEdge}(points,points,points);
 
-% Green strain, ε = || L^2 - (L_0)^2 || / ((L_0)^2)
-func compute_strain(s : HyperEdge, p : (Point*2) ) -> (str : tensor[hyperedges](float))
+%%%%%
+func inverse2x2(A : tensor[2,2](float)) ->
+                (Ainv : tensor[2,2](float))
 
-  L = p(0).position - p(1).position;
-  L2 = dot(L,L);
-  str(s) = (L2 - s.L_0*s.L_0)/(s.L_0*s.L_0*2.0);
-  
+    detA = ( A(0,0) * A(1,1) - A(1,0) * A(0,1) );   
+    Ainv(0,0) = A(1,0);
+    Ainv(0,1) = -A(0,1);
+    Ainv(1,0) = -A(1,0);
+    Ainv(1,1) = A(0,0); 
+    Ainv =  (1.0/detA) * Ainv;
+                
 end
-
-% Potential energy, E =  ½kε^2
-func compute_energy(s : HyperEdge, p : (Point*2) ) -> (pe : tensor[hyperedges](float))
-
-  pe(s) = 0.5 * s.k * s.strain*s.strain;    
-
+%%%%%
+func trace2x2(A : tensor[2,2](float)) ->
+             (tr : float)
+             
+    tr = A(0,0) + A(1,1);
+             
 end
+%%%%%
+func precompute_area(tri: HyperEdge, p : (Point*3)) -> 
+                    (a : tensor[hyperedges](float))
 
-% dE/dp_i = (1 / (2L_0)) (2p_i - 2p_j);
-func compute_deriv_energy(s : HyperEdge, p : (Point*2)) -> (de : tensor[hyperedges,points](tensor[3](float)))
+    v1 = p(0);
+    v2 = p(1);
+    v3 = p(2);
+    
+    ubar = v2.init_position - v1.init_position;
+    vbar = v3.init_position - v1.init_position;
+    
+    u = v2.position - v1.position;
+    v = v3.position - v1.position;
 
-  de(s,p(0)) = (1.0 / (2.0*s.L_0)) * (2.0*p(0).position - 2.0*p(1).position);
-  de(s,p(1)) = (1.0 / (2.0*s.L_0)) * (2.0*p(1).position - 2.0*p(0).position);
+    I = [1.0, 0.0; 0.0, 1.0];
+        
+    A = I;
 
-end
+    A(0,0) = ubar(0);
+    A(0,1) = vbar(0);
+    A(1,0) = ubar(1);
+    A(1,1) = vbar(1);
+    
+    detA = ( A(0,0) * A(1,1) - A(1,0) * A(0,1) );   
 
-% F_(p_i) = -kε(dE/dp_i)
-func compute_force(s : HyperEdge, p : (Point*2)) -> (f : tensor[points](tensor[3](float)))
-
-  de1 = (1.0 / (2.0*s.L_0)) * (2.0*p(0).position - 2.0*p(1).position);
-  de2 = (1.0 / (2.0*s.L_0)) * (2.0*p(1).position - 2.0*p(0).position);  
-  f(p(0)) = -s.k*s.strain*de1;
-  f(p(1)) = -s.k*s.strain*de2;
-
-end
-
-% mg
-func compute_mg(p : Point) -> (mg : tensor[points](tensor[3](float)))
-
-  if (p.pinned)
-  	mg(p) = (1.0/p.mass) * [0.0, 0.0, 0.0];
-  else
-    mg(p) = (p.mass) * [0.0, -9.8, 0.0];
-  end
-end
-
-% m^-1 = 1/m
-func compute_Minv(p : Point) -> (Minv : tensor[points,points](tensor[3,3](float)))
-
-  Minv(p,p) = (1.0/p.mass) * [1.0, 0.0, 0.0; 
-  							  0.0, 1.0, 0.0; 
-  							  0.0, 0.0, 1.0];
+    a(tri) = 0.5 * detA;
+	if (detA < 0.0) 
+		a(tri) = -a(tri); 		%abs area
+	end
 
 end
+%%%%%
+func compute_strain_tensor(inout tri : HyperEdge, p : (Point*3) ) %-> 
+%                 (S : tensor[hyperedges](tensor[2,2](float)))
+
+    v1 = p(0);
+    v2 = p(1);
+    v3 = p(2);
+    
+    ubar = v2.init_position - v1.init_position;
+    vbar = v3.init_position - v1.init_position;
+    
+    u = v2.position - v1.position;
+    v = v3.position - v1.position;
+
+    I = [1.0, 0.0; 0.0, 1.0];
+    
+    % A, B are [ u | v ], where A is AFTER deformation, and B is BEFORE
+    
+    A = I;
+    B = I;
+    A(0,0) = u(0);
+    A(0,1) = v(0);
+    A(1,0) = u(1);
+    A(1,1) = v(1);
+
+    B(0,0) = ubar(0);
+    B(0,1) = vbar(0);
+    B(1,0) = ubar(1);
+    B(1,1) = vbar(1);
+    
+    Binv = inverse2x2(B);
+    dphi = A * Binv;
+    
+    tri.strain = (dphi' * dphi - I) / 2.0;
+
+end
+%%%%%
+func compute_energy_density(tri : HyperEdge) -> (W: tensor[hyperedges](float))
+
+    trs = trace2x2(tri.strain);
+    trs2 = trace2x2(tri.strain*tri.strain);
+    W(tri) = alpha * trs2 + 0.5 * beta * trs*trs;
+    
+end
+%%%%%
+func compute_energy(W: tensor[hyperedges](float), tri : HyperEdge) -> 
+					(E: tensor[hyperedges](float))
+
+	E(tri) = W(tri) * tri.init_area;
+    
+end
 
 
-
-proc main()
-
-  h = 1e-4;
-  Minv = map compute_Minv to points;
-  points.position = points.position + h * points.velocity;
-  calc_strain = map compute_strain to hyperedges reduce +;    
-  hyperedges.strain = calc_strain;
-  energy = map compute_energy to hyperedges reduce +;
-%% The dEnergy function has been merged into force to please the compiler  
-%% isa<TupleRead>(index) error
-%%dEnergy = map compute_deriv_energy to hyperedges reduce +;
-  force = map compute_force to hyperedges reduce +;
-  mg = map compute_mg to points;
-  points.velocity = points.velocity + h * (Minv * (force + mg));
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+proc main
+	
+    h = 1e-4;
+    A = map precompute_area to hyperedges;
+    hyperedges.init_area = A;
+    map compute_strain_tensor to hyperedges;
+	
+    W = map compute_energy_density to hyperedges; 
+	E = map compute_energy(W) to hyperedges reduce +;
+	
+    points.position = points.position + h * points.velocity;
+ 
+    print points.position;
+    print points.velocity;
+    print hyperedges.init_area;
+%    print hyperedges.strain;
+%    print W;
+%    print E;
  
 end

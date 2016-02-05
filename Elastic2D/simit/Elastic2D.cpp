@@ -12,15 +12,14 @@
 
 using namespace std;
 
-const int spacing = 2;
 const int spr_k = 0;//1e4;
 
 float angleX = 0.f;
 float angleY = 0.f;
 float angleZ = 0.f;
-float zoom = 1.5f;
-float panX = 0.25f;
-float panY = 0.25f;
+float zoom = 0.5f;
+float panX = -0.5f;
+float panY = -0.5f;
 
 
 double xpos = -1, ypos = -1;
@@ -77,18 +76,22 @@ void Elastic2D::load() {
 
 	srand ( time(NULL) );
     //DBG//cout<<"Setting field references\n";	
-    simit::FieldRef<simit_float,3> position = 
-    	points.addField<simit_float,3>("position");
-    simit::FieldRef<simit_float,3> velocity = 
-    	points.addField<simit_float,3>("velocity");
+    simit::FieldRef<simit_float,2> init_position = 
+    	points.addField<simit_float,2>("init_position");
+    simit::FieldRef<simit_float,2> position = 
+    	points.addField<simit_float,2>("position");
+    simit::FieldRef<simit_float,2> velocity = 
+    	points.addField<simit_float,2>("velocity");
     simit::FieldRef<simit_float> mass = points.addField<simit_float>("mass");
     simit::FieldRef<bool> pinned = points.addField<bool>("pinned");
     
 
-    simit::FieldRef<simit_float> k = hyperedges.addField<simit_float>("k");
-    simit::FieldRef<simit_float> L_0 = hyperedges.addField<simit_float>("L_0");
-    simit::FieldRef<simit_float> strain = 
-    	hyperedges.addField<simit_float>("strain");
+//   simit::FieldRef<simit_float,2> u = hyperedges.addField<simit_float,2>("u");
+//   simit::FieldRef<simit_float,2> v = hyperedges.addField<simit_float,2>("v");
+    simit::FieldRef<simit_float,2,2> strain = 
+    	hyperedges.addField<simit_float,2,2>("strain");
+    simit::FieldRef<simit_float> init_area = 
+    	hyperedges.addField<simit_float>("init_area");
 
     vector<simit::ElementRef> pointRefs;
     bool pinStart = true;
@@ -97,14 +100,20 @@ void Elastic2D::load() {
         simit::ElementRef pRef = pointRefs.back();
         
         //DBG//cout << v[0] << v[1] << v[2] << endl;
-        position.set(pRef, {v[0], v[1], v[2]});
-      	velocity.set(pRef, {0.0, 0.0, 0.0});
+        init_position.set(pRef, {v[0], v[1]});
+        position.set(pRef, {v[0], v[1]});
+//      	velocity.set(pRef, {10.0, 10.0});
       	//((rand() % 10) < 2);
+      	
+      	float dx = -10.0, dy = -0.0;
+      	
       	if (pinStart) {
+      	    velocity.set(pRef, {dx, dy});
       		mass.set(pRef, numeric_limits<float>::infinity());
 	      	pinned.set(pRef, true);     
 	      	pinStart = false; 		
 		} else {
+	      	velocity.set(pRef, {0.0, 0.0});
 	      	mass.set(pRef, 1.0);
       		pinned.set(pRef, false);
       	}
@@ -124,30 +133,18 @@ void Elastic2D::load() {
     	if (e3[1] != e1[0]) 
     		cerr << "e3 != e1 : " << e3[1] << ", " << e1[0] << endl;
     		
-        simit::ElementRef sRef = hyperedges.add(pointRefs[e1[0]-1], 
+        simit::ElementRef heRef = hyperedges.add(pointRefs[e1[0]-1], 
         									    pointRefs[e2[0]-1],
         									    pointRefs[e3[0]-1]); 
         std::array<double,3> pA = mesh.v[e1[0]-1];
         std::array<double,3> pB = mesh.v[e2[0]-1];   
         std::array<double,3> pC = mesh.v[e3[0]-1];   
            
-        double spr_L0 = sqrt(((pA[0])-(pB[0])) * 		
-        					((pA[0])-(pB[0])) +
-        					((pA[1])-(pB[1])) * 		
-        					((pA[1])-(pB[1])) +
-        					((pA[2])-(pB[2])) * 		
-        					((pA[2])-(pB[2])) );
-		//DBG//cout << e[0] << " " << e[1] << endl;
-		//DBG//cout << setprecision(10) <<pA[0] << " " << pB[0] <<endl 
-		//DBG//	 << pA[1] << " " << pB[1] <<endl
-		//DBG//	 << pA[2] << " " << pB[2] <<endl;        								
-        //DBG//cout << spr_L0 << endl;
-      	//float stretch = ((rand() % 20)-1.f)/100.0; 	//add random stretch 
-														//to hyperedges
 		float stretch = 0.f;
-        L_0.set(sRef, spr_L0*(1.f+stretch));
-        k.set(sRef, spr_k);
-        strain.set(sRef, 0);
+//        L_0.set(heRef, spr_L0*(1.f+stretch));
+//        k.set(heRef, spr_k);
+//        strain.set(heRef, 0);
+		init_area.set(heRef, 0.0);
     }
 
     // Load simit program here
@@ -206,23 +203,22 @@ void Elastic2D::step() {
 		glLoadIdentity();
 		glOrtho(-ratio, ratio, -1.f, 1.f, 10.f, -10.f);
 		glMatrixMode(GL_MODELVIEW);
+		glPolygonMode(GL_FRONT_AND_BACK,GL_LINE);		
 		glLoadIdentity();
 		if (spinning) {
 			double oldXPos = xpos;
 			double oldYPos = ypos;
 			glfwGetCursorPos(window, &xpos, &ypos);
-			angleX += (xpos - oldXPos);
-			while (angleX > 360) angleX -= 360;
-			angleY += (ypos - oldYPos);
-			while (angleY > 360) angleY -= 360;
+			angleX += fmod((xpos - oldXPos),360.f);
+			angleY += fmod((ypos - oldYPos),360.f);
 		}
 		if (rolling) {
 			double oldXPos = xpos;
 			double oldYPos = ypos;
 			glfwGetCursorPos(window, &xpos, &ypos);
-			angleZ += sqrt((xpos - oldXPos)*(xpos - oldXPos) +
-							(ypos - oldYPos)*(ypos - oldYPos));
-			while (angleZ > 360) angleZ -= 360;		
+			angleZ += fmod(sqrt((xpos - oldXPos)*(xpos - oldXPos) +
+							(ypos - oldYPos)*(ypos - oldYPos)),360.f);
+
 		}
 		glRotatef(angleZ, 0.f, 0.f, 1.f);
 		glRotatef(angleX, 0.f, 1.f, 0.f);
@@ -238,10 +234,10 @@ void Elastic2D::step() {
 		}
   
 		//DBG//cout << "Position : Velocity " << endl;
-		simit::FieldRef<simit_float,3> pos = 	
-			points.getField<simit_float,3>("position");
-		simit::FieldRef<simit_float,3> vel = 
-			points.getField<simit_float,3>("velocity");
+		simit::FieldRef<simit_float,2> pos = 	
+			points.getField<simit_float,2>("position");
+		simit::FieldRef<simit_float,2> vel = 
+			points.getField<simit_float,2>("velocity");
 		simit::FieldRef<bool> pin = 
 			points.getField<bool>("pinned");
 
@@ -253,50 +249,42 @@ void Elastic2D::step() {
 			glColor3f(1.f,0.f,0.f);
 		else
 			glColor3f(0.f,0.f,0.f);
-			glVertex3f((pos.get(p)(0)-spacing/2)/spacing, 
-   					   (pos.get(p)(1)-spacing/2)/spacing, 
-					   (pos.get(p)(2)-spacing/2)/spacing);
+			glVertex3f((pos.get(p)(0)), 
+   					   (pos.get(p)(1)), 
+					   (pos.get(p)(2)));
 		}
 		glEnd();
 
 		//DBG//cout << endl;
 		//DBG//cout << "Strain" << endl;
 
-		simit::FieldRef<simit_float,3> str = 
-			hyperedges.getField<simit_float,3>("strain");
+//		simit::FieldRef<simit_float,3> str = 
+//			hyperedges.getField<simit_float,3>("strain");
 
 		glColor3f(0.5f, 0.5f, 0.5f);
 		glLineWidth(2.f);
 		int hyperEdgeCounter = 0;
 		for (auto s : hyperedges) {
-			//GLfloat col = (hyperEdgeCounter/(float)hyperedges.getSize());
-			//glColor3f(col, col, col);
+		
 			hyperEdgeCounter++;
 			simit::ElementRef ep0 = hyperedges.getEndpoint(s,0);
 			simit::ElementRef ep1 = hyperedges.getEndpoint(s,1);
 			simit::ElementRef ep2 = hyperedges.getEndpoint(s,2);
-			
-			glBegin(GL_LINES);
-			glVertex3f((pos.get(ep0)(0)-spacing/2)/spacing, 
-						(pos.get(ep0)(1)-spacing/2)/spacing, 
-						(pos.get(ep0)(2)-spacing/2)/spacing);
-			glVertex3f((pos.get(ep1)(0)-spacing/2)/spacing, 
-						(pos.get(ep1)(1)-spacing/2)/spacing, 
-						(pos.get(ep1)(2)-spacing/2)/spacing);	
-			glVertex3f((pos.get(ep2)(0)-spacing/2)/spacing, 
-						(pos.get(ep2)(1)-spacing/2)/spacing, 
-						(pos.get(ep2)(2)-spacing/2)/spacing);												
-			glVertex3f((pos.get(ep0)(0)-spacing/2)/spacing, 
-						(pos.get(ep0)(1)-spacing/2)/spacing, 
-						(pos.get(ep0)(2)-spacing/2)/spacing);
-			glEnd();
-	//		cout << hyperEdgeCounter-1 << "::" << pos.get(ep0) << "; " << pos.get(ep1) << "; " << pos.get(ep2) << endl;
-			//DBG//cout << str.get(s) << endl;
-		}
 
-		//DBG//cout << endl;
-		//DBG//cout << endl;   
-		//DBG//cout<<"Done \n";
+			glBegin(GL_TRIANGLES);
+			glColor3f(0.f,0.f,0.f);
+			glVertex3f((pos.get(ep0)(0)), 
+						(pos.get(ep0)(1)), 
+						(pos.get(ep0)(2)));
+			glVertex3f((pos.get(ep1)(0)), 
+						(pos.get(ep1)(1)), 
+						(pos.get(ep1)(2)));	
+			glVertex3f((pos.get(ep2)(0)), 
+						(pos.get(ep2)(1)), 
+						(pos.get(ep2)(2)));												
+			glEnd();
+
+		}
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();

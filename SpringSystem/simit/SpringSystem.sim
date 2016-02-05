@@ -17,6 +17,7 @@ element Point
   position : tensor[3](float);
   velocity : tensor[3](float);
   mass : float;
+  pinned : bool;
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -71,6 +72,16 @@ func compute_force(s : Spring, p : (Point*2)) -> (f : tensor[points](tensor[3](f
 
 end
 
+% mg
+func compute_mg(p : Point) -> (mg : tensor[points](tensor[3](float)))
+
+  if (p.pinned)
+  	mg(p) = (1.0/p.mass) * [0.0, 0.0, 0.0];
+  else
+    mg(p) = (p.mass) * [0.0, -9.8, 0.0];
+  end
+end
+
 % m^-1 = 1/m
 func compute_Minv(p : Point) -> (Minv : tensor[points,points](tensor[3,3](float)))
 
@@ -80,10 +91,12 @@ func compute_Minv(p : Point) -> (Minv : tensor[points,points](tensor[3,3](float)
 
 end
 
+
+
 proc main()
 
-  h = 1e-5;
-  Minv = map compute_Minv to points reduce +;
+  h = 1e-4;
+  Minv = map compute_Minv to points;
   points.position = points.position + h * points.velocity;
   calc_strain = map compute_strain to springs reduce +;    
   springs.strain = calc_strain;
@@ -92,6 +105,7 @@ proc main()
 %% isa<TupleRead>(index) error
 %%dEnergy = map compute_deriv_energy to springs reduce +;
   force = map compute_force to springs reduce +;
-  points.velocity = points.velocity + h * (Minv * force);
+  mg = map compute_mg to points;
+  points.velocity = points.velocity + h * (Minv * (force + mg));
  
 end

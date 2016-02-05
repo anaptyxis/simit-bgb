@@ -24,12 +24,10 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % A HyperEdge has an associated
-%
-%
+%	strain tensor,
+%	initial area.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 element HyperEdge
-%	u : tensor[2](float);
-%	v : tensor[2](float);
 	strain : tensor[2,2](float); % strain tensor
 	init_area : float;
 end

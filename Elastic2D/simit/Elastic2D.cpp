@@ -82,17 +82,23 @@ void Elastic2D::load() {
     	points.addField<simit_float,2>("position");
     simit::FieldRef<simit_float,2> velocity = 
     	points.addField<simit_float,2>("velocity");
-    simit::FieldRef<simit_float> mass = points.addField<simit_float>("mass");
     simit::FieldRef<bool> pinned = points.addField<bool>("pinned");
     
-
-//   simit::FieldRef<simit_float,2> u = hyperedges.addField<simit_float,2>("u");
-//   simit::FieldRef<simit_float,2> v = hyperedges.addField<simit_float,2>("v");
     simit::FieldRef<simit_float,2,2> strain = 
     	hyperedges.addField<simit_float,2,2>("strain");
     simit::FieldRef<simit_float> init_area = 
     	hyperedges.addField<simit_float>("init_area");
-
+    simit::FieldRef<simit_float> mass = 
+    	hyperedges.addField<simit_float>("mass");    	
+    simit::FieldRef<simit_float,4,6> dDphi = 
+    	hyperedges.addField<simit_float,4,6>("dDphi");
+    simit::FieldRef<simit_float,4,4> dStrain = 
+    	hyperedges.addField<simit_float,4,4>("dStrain");
+    simit::FieldRef<simit_float,4> dEnergyDensity = 
+    	hyperedges.addField<simit_float,4>("dEnergyDensity");
+    simit::FieldRef<simit_float,6,30> dEnergy = 
+    	hyperedges.addField<simit_float,6,30>("dEnergy");
+    	
     vector<simit::ElementRef> pointRefs;
     bool pinStart = true;
     for(auto v : mesh.v) {
@@ -105,15 +111,15 @@ void Elastic2D::load() {
 //      	velocity.set(pRef, {10.0, 10.0});
       	//((rand() % 10) < 2);
       	
-      	float dx = -10.0, dy = -0.0;
-      	
+      	float dx = (rand() % 4)-4.0, dy = (rand() % 4)-4.0;
+   	    velocity.set(pRef, {dx, dy});      	
       	if (pinStart) {
-      	    velocity.set(pRef, {dx, dy});
+//     	    velocity.set(pRef, {dx, dy});
       		mass.set(pRef, numeric_limits<float>::infinity());
 	      	pinned.set(pRef, true);     
 	      	pinStart = false; 		
 		} else {
-	      	velocity.set(pRef, {0.0, 0.0});
+//	      	velocity.set(pRef, {0.0, 0.0});
 	      	mass.set(pRef, 1.0);
       		pinned.set(pRef, false);
       	}
@@ -251,7 +257,8 @@ void Elastic2D::step() {
 			glColor3f(0.f,0.f,0.f);
 			glVertex3f((pos.get(p)(0)), 
    					   (pos.get(p)(1)), 
-					   (pos.get(p)(2)));
+						0.f);
+//					   (pos.get(p)(2)));
 		}
 		glEnd();
 
@@ -275,13 +282,16 @@ void Elastic2D::step() {
 			glColor3f(0.f,0.f,0.f);
 			glVertex3f((pos.get(ep0)(0)), 
 						(pos.get(ep0)(1)), 
-						(pos.get(ep0)(2)));
+						0.f);
+//						(pos.get(ep0)(2)));
 			glVertex3f((pos.get(ep1)(0)), 
 						(pos.get(ep1)(1)), 
-						(pos.get(ep1)(2)));	
+						0.f);
+//						(pos.get(ep1)(2)));	
 			glVertex3f((pos.get(ep2)(0)), 
 						(pos.get(ep2)(1)), 
-						(pos.get(ep2)(2)));												
+						0.f);
+//						(pos.get(ep2)(2)));												
 			glEnd();
 
 		}

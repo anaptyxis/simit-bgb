@@ -75,7 +75,7 @@ Elastic2D::Elastic2D() : points(), hyperedges(points,points,points) {
 void Elastic2D::load() {
 
 	srand ( time(NULL) );
-    //DBG//cout<<"Setting field references\n";	
+	// Point field references
     simit::FieldRef<simit_float,2> init_position = 
     	points.addField<simit_float,2>("init_position");
     simit::FieldRef<simit_float,2> position = 
@@ -84,6 +84,7 @@ void Elastic2D::load() {
     	points.addField<simit_float,2>("velocity");
     simit::FieldRef<bool> pinned = points.addField<bool>("pinned");
     
+	//Hyperedge field references
     simit::FieldRef<simit_float,2,2> strain = 
     	hyperedges.addField<simit_float,2,2>("strain");
     simit::FieldRef<simit_float> init_area = 
@@ -105,12 +106,8 @@ void Elastic2D::load() {
         pointRefs.push_back(points.add());
         simit::ElementRef pRef = pointRefs.back();
         
-        //DBG//cout << v[0] << v[1] << v[2] << endl;
         init_position.set(pRef, {v[0], v[1]});
-        position.set(pRef, {v[0], v[1]});
-//      	velocity.set(pRef, {10.0, 10.0});
-      	//((rand() % 10) < 2);
-      	
+        position.set(pRef, {v[0], v[1]});      	
       	float dx = (rand() % 4)-4.0, dy = (rand() % 4)-4.0;
    	    velocity.set(pRef, {dx, dy});      	
       	if (pinStart) {
@@ -145,12 +142,12 @@ void Elastic2D::load() {
         std::array<double,3> pA = mesh.v[e1[0]-1];
         std::array<double,3> pB = mesh.v[e2[0]-1];   
         std::array<double,3> pC = mesh.v[e3[0]-1];   
-           
-		float stretch = 0.f;
-//        L_0.set(heRef, spr_L0*(1.f+stretch));
-//        k.set(heRef, spr_k);
-//        strain.set(heRef, 0);
-		init_area.set(heRef, 0.0);
+
+		//precompute area 
+		Eigen::Vector2f vA = Eigen::Vector2f(pA[0], pA[1]);
+		Eigen::Vector2f vB = Eigen::Vector2f(pB[0], pB[1]);
+		Eigen::Vector2f vC = Eigen::Vector2f(pC[0], pC[1]);			
+		init_area.set(heRef, precompute_area(vA, vB, vC));
     }
 
     // Load simit program here
@@ -352,3 +349,17 @@ bool Elastic2D::loadObject(const char * file_name) {
 	return true;
 }
 
+float Elastic2D::precompute_area(Eigen::Vector2f vA, 
+					  			 Eigen::Vector2f vB, 
+							     Eigen::Vector2f vC) {
+    Eigen::Vector2f ubar = vB - vA;
+    Eigen::Vector2f vbar = vC - vA;
+    
+    Eigen::Matrix2f A;
+    A << ubar(0), ubar(1),
+    	 vbar(0), vbar(1);  
+            
+    float detA = ( A(0,0) * A(1,1) - A(1,0) * A(0,1) );   
+
+    return fabs(0.5 * detA);
+}

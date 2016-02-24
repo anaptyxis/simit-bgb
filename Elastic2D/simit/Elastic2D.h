@@ -8,6 +8,8 @@
 #include "mesh.h"
 #include <GLFW/glfw3.h>
 #include <iostream>
+#include <Eigen/Dense>
+#include <Eigen/Sparse>
 
 class Elastic2D
 {
@@ -17,7 +19,9 @@ public:
 	void load();
 	void step();
 	bool loadObject(const char * file_name);
-	void update_angle();
+	float precompute_area(Eigen::Vector2f vA, 
+						  Eigen::Vector2f vB, 
+						  Eigen::Vector2f vC);
     
 protected:
 

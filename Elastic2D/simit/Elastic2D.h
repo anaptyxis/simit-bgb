@@ -8,8 +8,7 @@
 #include "mesh.h"
 #include <GLFW/glfw3.h>
 #include <iostream>
-#include <Eigen/Dense>
-#include <Eigen/Sparse>
+#include <Eigen/Eigen>
 
 class Elastic2D
 {
@@ -19,9 +18,6 @@ public:
 	void load();
 	void step();
 	bool loadObject(const char * file_name);
-	float precompute_area(Eigen::Vector2f vA, 
-						  Eigen::Vector2f vB, 
-						  Eigen::Vector2f vC);
     
 protected:
 
@@ -29,7 +25,9 @@ protected:
     simit::Set points;
     simit::Set hyperedges;
     simit::Program program;
+    simit::Function precomputation;
     simit::Function timeStepper;
+    int* localToGlobalMap;
     
 };
 

@@ -9,7 +9,6 @@
 #define str(s) #s
 #define toString(s) str(s) 
 
-
 using namespace std;
 
 const int spr_k = 0;//1e4;
@@ -17,11 +16,9 @@ const int spr_k = 0;//1e4;
 float angleX = 0.f;
 float angleY = 0.f;
 float angleZ = 0.f;
-float zoom = 0.5f;
+float zoom = 1.5f;
 float panX = -0.5f;
 float panY = -0.5f;
-
-
 double xpos = -1, ypos = -1;
 bool spinning = false;
 bool rolling = false;
@@ -88,7 +85,7 @@ void Elastic2D::load() {
     simit::FieldRef<simit_float,2,2> strain = 
     	hyperedges.addField<simit_float,2,2>("strain");
     simit::FieldRef<simit_float> init_area = 
-    	hyperedges.addField<simit_float>("init_area");
+    	hyperedges.addField<simit_float>("init_area");    	
     simit::FieldRef<simit_float> mass = 
     	hyperedges.addField<simit_float>("mass");    	
     simit::FieldRef<simit_float,4,6> dDphi = 
@@ -97,8 +94,10 @@ void Elastic2D::load() {
     	hyperedges.addField<simit_float,4,4>("dStrain");
     simit::FieldRef<simit_float,4> dEnergyDensity = 
     	hyperedges.addField<simit_float,4>("dEnergyDensity");
-    simit::FieldRef<simit_float,6,30> dEnergy = 
-    	hyperedges.addField<simit_float,6,30>("dEnergy");
+    simit::FieldRef<simit_float,6,500> dEnergy = 
+    	hyperedges.addField<simit_float,6,500>("dEnergy");
+//    simit::FieldRef<simit_float,6,500> T_i = 
+//    	hyperedges.addField<simit_float,6,500>("T_i");
     	
     vector<simit::ElementRef> pointRefs;
     bool pinStart = true;
@@ -108,7 +107,7 @@ void Elastic2D::load() {
         
         init_position.set(pRef, {v[0], v[1]});
         position.set(pRef, {v[0], v[1]});      	
-      	float dx = (rand() % 4)-4.0, dy = (rand() % 4)-4.0;
+      	float dx = (rand() % 4)-2.0, dy = (rand() % 4)-2.0;
    	    velocity.set(pRef, {dx, dy});      	
       	if (pinStart) {
 //     	    velocity.set(pRef, {dx, dy});
@@ -136,18 +135,15 @@ void Elastic2D::load() {
     	if (e3[1] != e1[0]) 
     		cerr << "e3 != e1 : " << e3[1] << ", " << e1[0] << endl;
     		
-        simit::ElementRef heRef = hyperedges.add(pointRefs[e1[0]-1], 
-        									    pointRefs[e2[0]-1],
-        									    pointRefs[e3[0]-1]); 
-        std::array<double,3> pA = mesh.v[e1[0]-1];
-        std::array<double,3> pB = mesh.v[e2[0]-1];   
-        std::array<double,3> pC = mesh.v[e3[0]-1];   
+        simit::ElementRef heRef = hyperedges.add(pointRefs[e1[0]], 
+        									    pointRefs[e2[0]],
+        									    pointRefs[e3[0]]); 
+        std::array<double,3> pA = mesh.v[e1[0]];
+        std::array<double,3> pB = mesh.v[e2[0]];   
+        std::array<double,3> pC = mesh.v[e3[0]];   
+           
+		init_area.set(heRef, 0.0);
 
-		//precompute area 
-		Eigen::Vector2f vA = Eigen::Vector2f(pA[0], pA[1]);
-		Eigen::Vector2f vB = Eigen::Vector2f(pB[0], pB[1]);
-		Eigen::Vector2f vC = Eigen::Vector2f(pC[0], pC[1]);			
-		init_area.set(heRef, precompute_area(vA, vB, vC));
     }
 
     // Load simit program here
@@ -162,6 +158,11 @@ void Elastic2D::load() {
     if(errorCode) { cout<<program.getDiagnostics().getMessage(); exit(0); }
 
     //DBG//cout<<"Compiling \n";
+    precomputation = program.compile("init");
+
+    precomputation.bind("points", &points);
+    precomputation.bind("hyperedges", &hyperedges);
+    precomputation.runSafe();
 
     timeStepper = program.compile("main");
 
@@ -334,9 +335,9 @@ bool Elastic2D::loadObject(const char * file_name) {
 	    //push the face content into the edges
  		if (strcmp( type, "f" ) == 0) {
 			fscanf( fp, "%d %d %d", &a, &b, &c );
-			mesh.edges.push_back({a, b});
-			mesh.edges.push_back({b, c});
-			mesh.edges.push_back({c, a});
+			mesh.edges.push_back({a-1, b-1});
+			mesh.edges.push_back({b-1, c-1});
+			mesh.edges.push_back({c-1, a-1});
 			faceCount++;
  		}
 		EOFp = fscanf( fp, "%s", type ); 
@@ -346,20 +347,37 @@ bool Elastic2D::loadObject(const char * file_name) {
 	cout << "Number of edges loaded: " << mesh.edges.size() << endl;
 	cout << "Number of faces loaded: " << faceCount << endl;
 
+	
+	//create T_i
+	int m[faceCount][6][2*mesh.v.size()];
+	
+	for (int i = 0; i < faceCount; i++) {
+		for (int j = 0; j < 3; j++) 
+			for (int k = 0; k < mesh.v.size(); k++) {
+				if (mesh.edges[i*3+j][0] == k) {
+					m[i][j*2][2*k] = 1;
+					m[i][j*2][2*k+1] = 0;
+					m[i][j*2+1][2*k] = 0;
+					m[i][j*2+1][2*k+1] = 1;
+				}
+				else {
+					m[i][j*2][2*k] = 0;
+					m[i][j*2][2*k+1] = 0;
+					m[i][j*2+1][2*k] = 0;
+					m[i][j*2+1][2*k+1] = 0;				}
+			}
+	}
+
+	for (int i = 0; i < faceCount; i++) {
+		for (int j = 0; j < 6; j++) {
+			for (int k = 0; k < 2*mesh.v.size(); k++) 
+				std::cout << m[i][j][k];
+			std::cout << "\n";
+		}
+		std::cout << "\n";
+	}
+
+//	exit(0);
 	return true;
 }
 
-float Elastic2D::precompute_area(Eigen::Vector2f vA, 
-					  			 Eigen::Vector2f vB, 
-							     Eigen::Vector2f vC) {
-    Eigen::Vector2f ubar = vB - vA;
-    Eigen::Vector2f vbar = vC - vA;
-    
-    Eigen::Matrix2f A;
-    A << ubar(0), ubar(1),
-    	 vbar(0), vbar(1);  
-            
-    float detA = ( A(0,0) * A(1,1) - A(1,0) * A(0,1) );   
-
-    return fabs(0.5 * detA);
-}

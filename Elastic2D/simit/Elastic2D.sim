@@ -1,9 +1,10 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % TODO:
 % 
-% 	1. move precompute A_i to cpp
-% 	2. move precompute dDphi to cpp
-%	3. compute T_i (cpp)
-%   4. plot energy (scalar) and momentum (vec3d)
+% 	√1. move precompute A_i to init
+% 	√2. move precompute dDphi to init
+%	*3. compute T_i (cpp)
+%    4. plot energy (scalar) and momentum (vec3d)
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -33,11 +34,12 @@ extern points  : set{Point};
 element HyperEdge
 	mass : float;
 	init_area : float; 					% A_i
+%	T_i :								% T_i;
 	strain : tensor[2,2](float); 		% ε, strain tensor
 	dDphi : tensor[4,6](float); 		% ∂Dɸ/∂v
 	dStrain : tensor[4,4](float); 		% ∂ε/∂Dɸ	
 	dEnergyDensity : tensor[4](float); 	% ∂W/∂ε
-	dEnergy : tensor[6,points](float); 		% ∂E = ∑ A_i ∂W ∂ε ∂Dɸ T_i
+	dEnergy : tensor[6,500](float); 		% ∂E = ∑ A_i ∂W ∂ε ∂Dɸ T_i
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -95,8 +97,8 @@ func precompute_area(tri: HyperEdge, p : (Point*3)) ->
 
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-func precompute_dDphi_dV(inout tri: HyperEdge, p : (Point*3)) %-> 
-%                    (dDphi : tensor[hyperedges](tensor[4,6](float)))
+func precompute_dDphi_dV(inout tri: HyperEdge, p : (Point*3)) 
+	% -> (dDphi : tensor[hyperedges](tensor[4,6](float)))
 
     J = [	0.0, 1.0; 
     		-1.0, 0.0	];
@@ -126,7 +128,7 @@ func precompute_dDphi_dV(inout tri: HyperEdge, p : (Point*3)) %->
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 func compute_strain_tensor(inout tri : HyperEdge, p : (Point*3) ) 
-	%-> (S : tensor[hyperedges](tensor[2,2](float)))
+	% -> (S : tensor[hyperedges](tensor[2,2](float)))
 
     I = [	1.0, 0.0; 
     		0.0, 1.0	];
@@ -246,7 +248,7 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 func compute_dEnergy(inout tri: HyperEdge) 
 
-	dE = tri.init_area * tri.dEnergyDensity' * tri.dStrain * tri.dDphi;
+	dE = tri.init_area * tri.dEnergyDensity' * tri.dStrain * tri.dDphi;% * T_i;
 
 print dE;
 
@@ -259,15 +261,27 @@ func compute_kinetic_energy(p: Point) -> (ke: tensor[points](float))
 					p.velocity(1)*p.velocity(1)); 
 	
 end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+func compute_T_i(tri: HyperEdge, p: (Point*3)) -> 
+	(T_i : tensor[hyperedges](tensor[3,points](tensor[2,2](float))))
+
+
+
+
+
+
+end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+proc init
+    hyperedges.init_area = map precompute_area to hyperedges;
+    map precompute_dDphi_dV to hyperedges;
+end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 proc main
 	
     h = 1e-4;
-    hyperedges.init_area = map precompute_area to hyperedges;
-    map precompute_dDphi_dV to hyperedges;
     map compute_dstrain_dDphi to hyperedges;
-    map compute_strain_tensor to hyperedges;
-	
+    map compute_strain_tensor to hyperedges;	
     W = map compute_energy_density to hyperedges; 
 	E = map compute_energy(W) to hyperedges reduce +;
 	
@@ -313,7 +327,7 @@ end
 %   0, (v̅2-v̅3)^⊥_y, 0,-(v̅1-v̅3)^⊥_y, 0, -(v̅2-v̅3)^⊥_y+(v̅1-v̅3)_y, 0 ]
 %
 % T_i = [	1	0	0	... 			v̅1.x
-%			0	0	1	... 			v̅1.y
+%			0	1	0	... 			v̅1.y
 %			...							v̅2.x
 %			...							v̅2.y
 %			...							v̅3.x

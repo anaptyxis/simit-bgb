@@ -13,7 +13,7 @@
 using namespace std;
 
 const int spacing = 2;
-const int spr_k = 1e4;
+const int spr_k = 1e5;
 
 float angleX = 0.f;
 float angleY = 0.f;
@@ -125,7 +125,8 @@ void SpringSystem::load() {
     	springs.addField<simit_float>("strain");
 
     vector<simit::ElementRef> pointRefs;
-    bool pinStart = true;
+    bool pinStart = false;
+    int count = 0;
     for(auto v : mesh.v) {
         pointRefs.push_back(points.add());
         simit::ElementRef pRef = pointRefs.back();
@@ -134,6 +135,9 @@ void SpringSystem::load() {
         position.set(pRef, {v[0], v[1], v[2]});
       	velocity.set(pRef, {0.0, 0.0, 0.0});
       	//((rand() % 10) < 2);
+      	if ((count == 3) || (count == 6))
+      		pinStart = true;
+      	count++;
       	if (pinStart) {
       		mass.set(pRef, numeric_limits<float>::infinity());
 	      	pinned.set(pRef, true);     
@@ -193,7 +197,7 @@ void SpringSystem::load() {
     
 void SpringSystem::step() {
 
-	int numSteps = -1;		// negative for unbounded
+	int numSteps = 1;		// negative for unbounded
 
 	GLFWwindow* window;
 	glfwSetErrorCallback(error_callback);

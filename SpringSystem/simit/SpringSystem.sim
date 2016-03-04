@@ -54,13 +54,14 @@ func compute_energy(s : Spring, p : (Point*2) ) -> (pe : tensor[springs](float))
 
 end
 
-% dE/dp_i = (1 / (2L_0)) (2p_i - 2p_j);
+%{ dE/dp_i = (1 / (2L_0)) (2p_i - 2p_j);
 func compute_deriv_energy(s : Spring, p : (Point*2)) -> (de : tensor[springs,points](tensor[3](float)))
 
   de(s,p(0)) = (1.0 / (2.0*s.L_0)) * (2.0*p(0).position - 2.0*p(1).position);
   de(s,p(1)) = (1.0 / (2.0*s.L_0)) * (2.0*p(1).position - 2.0*p(0).position);
 
 end
+%}
 
 % F_(p_i) = -kε(dE/dp_i)
 func compute_force(s : Spring, p : (Point*2)) -> (f : tensor[points](tensor[3](float)))
@@ -76,9 +77,9 @@ end
 func compute_mg(p : Point) -> (mg : tensor[points](tensor[3](float)))
 
   if (p.pinned)
-  	mg(p) = (1.0/p.mass) * [0.0, 0.0, 0.0];
+  	mg(p) = (1.0/p.mass) * [0.0, 0.0, 0.0]';
   else
-    mg(p) = (p.mass) * [0.0, -9.8, 0.0];
+    mg(p) = (p.mass) * [0.0, -9.8, 0.0]';
   end
 end
 
@@ -93,9 +94,9 @@ end
 
 
 
-proc main()
+proc main
 
-  h = 1e-4;
+  h = 1e-3;
   Minv = map compute_Minv to points;
   points.position = points.position + h * points.velocity;
   calc_strain = map compute_strain to springs reduce +;    
@@ -105,6 +106,7 @@ proc main()
 %% isa<TupleRead>(index) error
 %%dEnergy = map compute_deriv_energy to springs reduce +;
   force = map compute_force to springs reduce +;
+  force = force - 0.99 * points.velocity;
   mg = map compute_mg to points;
   points.velocity = points.velocity + h * (Minv * (force + mg));
  

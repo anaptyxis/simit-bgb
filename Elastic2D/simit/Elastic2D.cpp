@@ -16,7 +16,7 @@ const int spr_k = 0;//1e4;
 float angleX = 0.f;
 float angleY = 0.f;
 float angleZ = 0.f;
-float zoom = 1.5f;
+float zoom = 1.f;
 float panX = -0.5f;
 float panY = -0.5f;
 double xpos = -1, ypos = -1;
@@ -80,10 +80,22 @@ void Elastic2D::load() {
     simit::FieldRef<simit_float,2> velocity = 
     	points.addField<simit_float,2>("velocity");
     simit::FieldRef<bool> pinned = points.addField<bool>("pinned");
+//DEBUG
+    simit::FieldRef<simit_float,2> prev_position = 
+    	points.addField<simit_float,2>("prev_position");
     
 	//Hyperedge field references
+    simit::FieldRef<simit_float,2,2> dPhi = 
+    	hyperedges.addField<simit_float,2,2>("dPhi");
     simit::FieldRef<simit_float,2,2> strain = 
     	hyperedges.addField<simit_float,2,2>("strain");
+    simit::FieldRef<simit_float> energy = 
+    	hyperedges.addField<simit_float>("energy");
+    simit::FieldRef<simit_float> energyDensity = 
+    	hyperedges.addField<simit_float>("energyDensity");
+//DEBUG
+    simit::FieldRef<simit_float> prev_energyDensity = 
+    	hyperedges.addField<simit_float>("prev_energyDensity");
     simit::FieldRef<simit_float> init_area = 
     	hyperedges.addField<simit_float>("init_area");    	
     simit::FieldRef<simit_float> mass = 
@@ -94,31 +106,54 @@ void Elastic2D::load() {
     	hyperedges.addField<simit_float,4,4>("dStrain");
     simit::FieldRef<simit_float,4> dEnergyDensity = 
     	hyperedges.addField<simit_float,4>("dEnergyDensity");
-    simit::FieldRef<simit_float,6,500> dEnergy = 
-    	hyperedges.addField<simit_float,6,500>("dEnergy");
+    simit::FieldRef<simit_float,6> dEnergy = 
+    	hyperedges.addField<simit_float,6>("dEnergy");
 //    simit::FieldRef<simit_float,6,500> T_i = 
 //    	hyperedges.addField<simit_float,6,500>("T_i");
-    	
+//DEBUG
+    simit::FieldRef<simit_float,2,2> prev_strain = 
+    	hyperedges.addField<simit_float,2,2>("prev_strain");
+ 	
     vector<simit::ElementRef> pointRefs;
-    bool pinStart = true;
+    bool startv = true;
+    int x = 0;
     for(auto v : mesh.v) {
         pointRefs.push_back(points.add());
         simit::ElementRef pRef = pointRefs.back();
         
         init_position.set(pRef, {v[0], v[1]});
-        position.set(pRef, {v[0], v[1]});      	
-      	float dx = (rand() % 4)-2.0, dy = (rand() % 4)-2.0;
-   	    velocity.set(pRef, {dx, dy});      	
-      	if (pinStart) {
-//     	    velocity.set(pRef, {dx, dy});
-      		mass.set(pRef, numeric_limits<float>::infinity());
-	      	pinned.set(pRef, true);     
-	      	pinStart = false; 		
+        position.set(pRef, {v[0], v[1]});
+        float dx, dy;    
+ /*         	
+		if (startv) {
+    	  	dx = (rand() % 2)-1.0; 
+    	  	dy = (rand() % 2)-1.0;
+//			dx = -1.0;
+//			dy = 0.0;
+	     	pinned.set(pRef, false);     
+   	    	startv = false;
+   	    } else {
+    	  	dx = (rand() % 2)-1.0; 
+    	  	dy = (rand() % 2)-1.0;
+//  dx = 0.0;
+//  dx = 0.0;
+	     	pinned.set(pRef, true);     
+		}
+*/
+if (x == 0) {
+		dx = -1.6;
+		dy = -1.1;
+		}
+		else if (x==1) {
+		dx = 1.2;
+		dy = -1.5;
 		} else {
-//	      	velocity.set(pRef, {0.0, 0.0});
-	      	mass.set(pRef, 1.0);
-      		pinned.set(pRef, false);
-      	}
+		dx = -1.3;
+		dy = 1.4;
+		}
+		x++;
+		
+   		velocity.set(pRef, {dx, dy});   
 	}
 
     for(int idx = 0; idx < mesh.edges.size(); ) {
@@ -143,6 +178,7 @@ void Elastic2D::load() {
         std::array<double,3> pC = mesh.v[e3[0]];   
            
 		init_area.set(heRef, 0.0);
+      	mass.set(heRef, 10.0);
 
     }
 
@@ -176,7 +212,7 @@ void Elastic2D::load() {
     
 void Elastic2D::step() {
 
-	int numSteps = -1;		// negative for unbounded
+	int numSteps = 1000;		// negative for unbounded
 
 	GLFWwindow* window;
 	glfwSetErrorCallback(error_callback);
@@ -342,13 +378,15 @@ bool Elastic2D::loadObject(const char * file_name) {
  		}
 		EOFp = fscanf( fp, "%s", type ); 
  	}
+
  
 	cout << "Number of vertices loaded: " << mesh.v.size() << endl;
 	cout << "Number of edges loaded: " << mesh.edges.size() << endl;
 	cout << "Number of faces loaded: " << faceCount << endl;
 
+
 	
-	//create T_i
+/*	//create T_i
 	int m[faceCount][6][2*mesh.v.size()];
 	
 	for (int i = 0; i < faceCount; i++) {
@@ -376,7 +414,7 @@ bool Elastic2D::loadObject(const char * file_name) {
 		}
 		std::cout << "\n";
 	}
-
+*/
 //	exit(0);
 	return true;
 }

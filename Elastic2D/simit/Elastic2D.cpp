@@ -124,35 +124,38 @@ void Elastic2D::load() {
         init_position.set(pRef, {v[0], v[1]});
         position.set(pRef, {v[0], v[1]});
         float dx, dy;    
- /*         	
-		if (startv) {
-    	  	dx = (rand() % 2)-1.0; 
-    	  	dy = (rand() % 2)-1.0;
+          	
+/*		if (startv) {
+    	  	dx = ((rand() % 200)-100)/1000.f; 
+    	  	dy = ((rand() % 200)-100)/1000.f;
 //			dx = -1.0;
 //			dy = 0.0;
 	     	pinned.set(pRef, false);     
    	    	startv = false;
    	    } else {
-    	  	dx = (rand() % 2)-1.0; 
-    	  	dy = (rand() % 2)-1.0;
+    	  	dx = ((rand() % 200)-100)/1000.f; 
+    	  	dy = ((rand() % 200)-100)/1000.f;
 //  dx = 0.0;
 //  dx = 0.0;
 	     	pinned.set(pRef, true);     
 		}
 */
 if (x == 0) {
-		dx = -1.6;
-		dy = -1.1;
+		dx = -1.0;
+		dy = 0.0;
 		}
 		else if (x==1) {
-		dx = 1.2;
-		dy = -1.5;
+		dx = 0.0;
+		dy = 0.0;
+		} else if (x==2) {
+		dx = 0.0;
+		dy = 0.0;
 		} else {
-		dx = -1.3;
-		dy = 1.4;
+		dx = 1.0;
+		dy = 0.0;
 		}
 		x++;
-		
+	
    		velocity.set(pRef, {dx, dy});   
 	}
 
@@ -212,7 +215,7 @@ if (x == 0) {
     
 void Elastic2D::step() {
 
-	int numSteps = 1000;		// negative for unbounded
+	int numSteps = 2;		// negative for unbounded
 
 	GLFWwindow* window;
 	glfwSetErrorCallback(error_callback);

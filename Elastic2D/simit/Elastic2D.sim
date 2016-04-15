@@ -197,10 +197,9 @@ beta = 1e4;
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 func compute_energy(W: tensor[hyperedges](float), inout tri : HyperEdge) -> 
-					(E: tensor[hyperedges](float))
+					(E: float)
 
-	E(tri) = W(tri) * tri.init_area;
-    tri.energy = E(tri);
+	E = W(tri) * tri.init_area;
 
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -250,7 +249,7 @@ func compute_dEnergy(inout tri : HyperEdge, p : (Point*3))
 	dE_tri = tri.init_area * tri.dEnergyDensity' * 
 		 	 tri.dStrain * tri.dDphi;
 	tri.dEnergy = dE_tri';
-		
+println "tri.dEnergy: ",tri.dEnergy;		
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %func compute_T_i(tri: HyperEdge, p: (Point*3)) -> 
@@ -267,9 +266,9 @@ func create_dEnergy_matrix(tri : HyperEdge, p : (Point*3)) ->
 	dE(p(2))(0) = tri.dEnergy(4) ;
 	dE(p(2))(1) = tri.dEnergy(5) ;
 
-%{print "\n** dE (1x6) = \n";
-print dE';
-%}
+print "\n** dE (1x6) = \n";
+print dE;
+
 	
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -389,6 +388,7 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 proc init
     hyperedges.init_area = map precompute_area to hyperedges;
+println "area: ",hyperedges.init_area;
     map precompute_dDphi_dV to hyperedges;
     print "v1.x,","v1.y,","v2.x,","v2.y,","v3.x,","v3.y,";
 	print "dPhi(11),","dPhi(12),","dPhi(21),","dPhi(22),";
@@ -414,7 +414,7 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 proc main
 	
-    h = 1e-5;
+    h = 1e-3;
 
 	% for print (point x)
     map compute_dPhi to hyperedges;	
@@ -435,9 +435,10 @@ proc main
     map compute_dstrain_dDphi to hyperedges;
     
     W = map compute_energy_density to hyperedges; 
-	E = map compute_energy(W) to hyperedges reduce +;
-
-	M = map compute_mass to hyperedges reduce +;
+println "W :",W;
+%	E = map compute_energy(W) to hyperedges reduce +;
+%println "E: ",E;
+	M = map compute_mass to hyperedges reduce +;	
 %	print "Mass\n",M,"\n";
 %	print "V'V\n",((points.velocity)'*(points.velocity)),"\n";
 %	print "0.5*V'V\n",0.5*((points.velocity)'*M*(points.velocity)),"\n";	
@@ -446,21 +447,20 @@ proc main
 %print"\nPositions :\n";
 %print points.position;
 
-
 %print"\n\nKE :\n";
 %print KE,",";
 %print"\nE :\n";
 %print E,",";
 %print "\n(E+KE):\n";
-print (E+KE),",";
-
+%print (E+KE),",";
 	
 	map compute_dEnergyDensity_dStrain to hyperedges;
 	map compute_dEnergy to hyperedges reduce +;
 	
 	dE = map create_dEnergy_matrix to hyperedges reduce +;
+println "dE: ",dE;
     points.velocity = points.velocity - (h * Minv * dE);
-
+println "force: ",(h * Minv*dE);
   % 	map print_csv2(Wold) to hyperedges;
 
 %	map print_csv3 to hyperedges;

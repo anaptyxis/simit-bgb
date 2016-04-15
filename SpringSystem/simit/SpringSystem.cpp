@@ -197,7 +197,7 @@ void SpringSystem::load() {
     
 void SpringSystem::step() {
 
-	int numSteps = 1;		// negative for unbounded
+	int numSteps = -1;		// negative for unbounded
 
 	GLFWwindow* window;
 	glfwSetErrorCallback(error_callback);

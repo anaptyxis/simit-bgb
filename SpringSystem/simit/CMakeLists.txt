@@ -112,9 +112,9 @@ set_property(TARGET ${PROJECT_NAME} PROPERTY LINK_FLAGS ${LLVM_LDFLAGS})
 
 if ($ENV{SIMIT_NO_IPO})
   message("building without ipo")
-  set(LLVM_COMPONENTS core jit x86 vectorize bitwriter)
+  set(LLVM_COMPONENTS core mcjit x86 vectorize bitwriter)
 else ()
-  set(LLVM_COMPONENTS core jit x86 ipo vectorize bitwriter)
+  set(LLVM_COMPONENTS core mcjit x86 ipo vectorize bitwriter)
 endif()
 
 execute_process(COMMAND ${LLVM_CONFIG} --libnames ${LLVM_COMPONENTS} OUTPUT_VARIABLE LLVM_LIBS OUTPUT_STRIP_TRAILING_WHITESPACE)

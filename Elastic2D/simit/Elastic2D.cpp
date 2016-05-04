@@ -12,6 +12,7 @@
 using namespace std;
 
 const int spr_k = 0;//1e4;
+const int pinList[] = {1,2};
 
 float angleX = 0.f;
 float angleY = 0.f;
@@ -59,7 +60,7 @@ static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
 	float scroll_sensitivity = 0.25;
 	panX -= xoffset*scroll_sensitivity;
-	panY -= yoffset*scroll_sensitivity;
+	panY += yoffset*scroll_sensitivity;
 }
 
 /* ********************* */
@@ -80,9 +81,6 @@ void Elastic2D::load() {
     simit::FieldRef<simit_float,2> velocity = 
     	points.addField<simit_float,2>("velocity");
     simit::FieldRef<bool> pinned = points.addField<bool>("pinned");
-//DEBUG
-    simit::FieldRef<simit_float,2> prev_position = 
-    	points.addField<simit_float,2>("prev_position");
     
 	//Hyperedge field references
     simit::FieldRef<simit_float,2,2> dPhi = 
@@ -93,9 +91,6 @@ void Elastic2D::load() {
     	hyperedges.addField<simit_float>("energy");
     simit::FieldRef<simit_float> energyDensity = 
     	hyperedges.addField<simit_float>("energyDensity");
-//DEBUG
-    simit::FieldRef<simit_float> prev_energyDensity = 
-    	hyperedges.addField<simit_float>("prev_energyDensity");
     simit::FieldRef<simit_float> init_area = 
     	hyperedges.addField<simit_float>("init_area");    	
     simit::FieldRef<simit_float> mass = 
@@ -108,15 +103,9 @@ void Elastic2D::load() {
     	hyperedges.addField<simit_float,4>("dEnergyDensity");
     simit::FieldRef<simit_float,6> dEnergy = 
     	hyperedges.addField<simit_float,6>("dEnergy");
-//    simit::FieldRef<simit_float,6,500> T_i = 
-//    	hyperedges.addField<simit_float,6,500>("T_i");
-//DEBUG
-    simit::FieldRef<simit_float,2,2> prev_strain = 
-    	hyperedges.addField<simit_float,2,2>("prev_strain");
  	
     vector<simit::ElementRef> pointRefs;
-    bool startv = true;
-    int x = 0;
+    int x = 1;
     for(auto v : mesh.v) {
         pointRefs.push_back(points.add());
         simit::ElementRef pRef = pointRefs.back();
@@ -124,38 +113,22 @@ void Elastic2D::load() {
         init_position.set(pRef, {v[0], v[1]});
         position.set(pRef, {v[0], v[1]});
         float dx, dy;    
-          	
-/*		if (startv) {
-    	  	dx = ((rand() % 200)-100)/1000.f; 
-    	  	dy = ((rand() % 200)-100)/1000.f;
-//			dx = -1.0;
+         	
+    	  	dx = ((rand() % 4)-2.0)/1.f; 
+    	  	dy = ((rand() % 4)-2.0)/1.f;
+//			dx = 0.0;
 //			dy = 0.0;
-	     	pinned.set(pRef, false);     
-   	    	startv = false;
-   	    } else {
-    	  	dx = ((rand() % 200)-100)/1000.f; 
-    	  	dy = ((rand() % 200)-100)/1000.f;
-//  dx = 0.0;
-//  dx = 0.0;
-	     	pinned.set(pRef, true);     
-		}
-*/
-if (x == 0) {
-		dx = -1.0;
-		dy = 0.0;
-		}
-		else if (x==1) {
-		dx = 0.0;
-		dy = 0.0;
-		} else if (x==2) {
-		dx = 0.0;
-		dy = 0.0;
-		} else {
-		dx = 1.0;
-		dy = 0.0;
-		}
-		x++;
-	
+			//4,3  : 931,961
+			if ((x == 931) ||
+				(x == 961)) {
+  			   	pinned.set(pRef, true);     
+  			   	dx = 0.0;
+  			   	dy = 0.0;
+  			   	}
+  			else
+	     		pinned.set(pRef, false);     
+
+		x++;	
    		velocity.set(pRef, {dx, dy});   
 	}
 
@@ -181,7 +154,7 @@ if (x == 0) {
         std::array<double,3> pC = mesh.v[e3[0]];   
            
 		init_area.set(heRef, 0.0);
-      	mass.set(heRef, 10.0);
+      	mass.set(heRef, 0.0);
 
     }
 
@@ -215,7 +188,7 @@ if (x == 0) {
     
 void Elastic2D::step() {
 
-	int numSteps = 2;		// negative for unbounded
+	int numSteps = 100000;		// negative for unbounded
 
 	GLFWwindow* window;
 	glfwSetErrorCallback(error_callback);
@@ -233,7 +206,7 @@ void Elastic2D::step() {
 	glfwSetMouseButtonCallback(window, mouse_button_callback);
 	glfwSetScrollCallback(window, scroll_callback);
 
-	while (!glfwWindowShouldClose(window))
+	while ((!glfwWindowShouldClose(window)) && (numSteps != 0))
 	{
 		float ratio;
 		int width, height;
@@ -283,21 +256,25 @@ void Elastic2D::step() {
 			points.getField<simit_float,2>("velocity");
 		simit::FieldRef<bool> pin = 
 			points.getField<bool>("pinned");
-
-		glPointSize(4.f*zoom);
-		glBegin(GL_POINTS);
+		
 		for (auto p : points) {
 			//DBG//cout << pos.get(p) << " : " << vel.get(p) << endl;
-		if (pin.get(p))
-			glColor3f(1.f,0.f,0.f);
-		else
-			glColor3f(0.f,0.f,0.f);
+			if (pin.get(p)) {		
+				glPointSize(8.f*zoom);
+				glColor3f(1.f,0.f,0.f);
+			}
+			else {
+				glPointSize(4.f*zoom);
+				glColor3f(0.f,0.f,0.f);
+			}
+			glBegin(GL_POINTS);
 			glVertex3f((pos.get(p)(0)), 
    					   (pos.get(p)(1)), 
 						0.f);
 //					   (pos.get(p)(2)));
+			glEnd();
 		}
-		glEnd();
+
 
 		//DBG//cout << endl;
 		//DBG//cout << "Strain" << endl;

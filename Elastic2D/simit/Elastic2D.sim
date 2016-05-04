@@ -1,51 +1,27 @@
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% TODO:
-% 
-% 	√1. move precompute A_i to init
-% 	√2. move precompute dDphi to init
-%	*3. compute T_i (cpp)
-%    4. plot energy (scalar) and momentum (vec3d)
-%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+const h : float = 1e-4;
+const alpha : float = 1e4;
+const beta : float = 1e3;
+const massperunitarea = 10.0;
+const gravity = [0.0, 9.8];
 
-%const alpha : float = 1e1;
-%const beta : float = 1e4;
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% A Point consists of a 
-%   position vector, 
-%   velocity vector, 
-%   mass scalar
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 element Point
 	init_position : tensor[2](float);
 	position : tensor[2](float);
 	velocity : tensor[2](float);
 	pinned : bool;
-	prev_position : tensor[2](float); %DEBUG
 end
 
-extern points  : set{Point};
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% A HyperEdge has an associated
-%	strain tensor,
-%	initial area.
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 element HyperEdge
 	mass : float;
 	energy : float;
 	energyDensity : float;
-	prev_energyDensity : float;
 	init_area : float; 					% A_i
-%	T_i :								% T_i;
 	dPhi : tensor[2,2](float);			% Dɸ
 	strain : tensor[2,2](float); 		% ε, strain tensor
 	dDphi : tensor[4,6](float); 		% ∂Dɸ/∂v
 	dStrain : tensor[4,4](float); 		% ∂ε/∂Dɸ	
 	dEnergyDensity : tensor[4](float); 	% ∂W/∂ε
 	dEnergy : tensor[6](float); 		% ∂E = ∑ A_i ∂W ∂ε ∂Dɸ %T_i
-	prev_strain : tensor[2,2](float);	%DEBUG
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -53,6 +29,7 @@ end
 % and a set of HyperEdges per Point triple
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+extern points  : set{Point};
 extern hyperedges : set{HyperEdge}(points,points,points);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -66,14 +43,12 @@ func inverse2x2(A : tensor[2,2](float)) ->
     Ainv(0,1) = -A(0,1);
     Ainv(1,0) = -A(1,0);
     Ainv(1,1) = A(0,0); 
-    Ainv =  (1.0/detA) * Ainv;
-                
+    Ainv =  (1.0/detA) * Ainv;                
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 func trace2x2(A : tensor[2,2](float)) -> (tr : float)
              
-    tr = A(0,0) + A(1,1);
-             
+    tr = A(0,0) + A(1,1);           
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%% PRECOMPUTES %%%%%%%%%%%%%%
@@ -103,7 +78,6 @@ func precompute_area(tri: HyperEdge, p : (Point*3)) ->
 	if (detA < 0.0) 
 		a(tri) = -a(tri); 		%abs area
 	end
-
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 func precompute_dDphi_dV(inout tri: HyperEdge, p : (Point*3)) 
@@ -131,9 +105,11 @@ func precompute_dDphi_dV(inout tri: HyperEdge, p : (Point*3))
     dDphi(3,3) = -vbar13o(1);
     dDphi(3,5) = vbar13o(1) - vbar23o(1);    
 	tri.dDphi = (dDphi/(vbar23o'*vbar13));
-	
-%	print tri.dDphi;
-	
+end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+func compute_g(p : Point) -> (g : tensor[points](tensor[2](float)))
+  g(p) = gravity';
+
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%% COMPUTES %%%%%%%%%%%%%%%%
@@ -161,55 +137,36 @@ func compute_dPhi(inout tri : HyperEdge, p: (Point*3) )
 
 	vbar21 = p(1).init_position-p(0).init_position;
 	v21 = p(1).position-p(0).position;
-%{
-print "pos agg :", p(1).position, "\n";
-print "pos agg :", p(0).position, "\n";
-print "pos ind :", p(1).position(0), " \n", p(1).position(1),"\n";
-print "pos ind :", p(0).position(0), " \n", p(0).position(1),"\n";
-
-print "----\n";
-print "v21: ",v21(0),", ",v21(1),"\n";
-print "   : ",(p(1).position(0)-p(0).position(0)),", ",p(1).position(1)-p(0).position(1),"\n\n\n";
-%}
-
-
 end	    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 func compute_strain_tensor(inout tri : HyperEdge, p : (Point*3) ) 
 
     I = [	1.0, 0.0; 
     		0.0, 1.0	];
-
     tri.strain = (tri.dPhi' * tri.dPhi - I) / 2.0;
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-func compute_energy_density(inout tri : HyperEdge) -> 
-							(W: tensor[hyperedges](float))
-
-alpha = 1e4;
-beta = 1e4;
+func compute_energy_density(inout tri : HyperEdge)
 
     trs = trace2x2(tri.strain);
     trs2 = trace2x2(tri.strain*tri.strain);
-    W(tri) = alpha * trs2 + 0.5 * beta * trs*trs;
-    tri.energyDensity = W(tri);
-
+    tri.energyDensity = alpha * trs2 + 0.5 * beta * trs*trs;
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-func compute_energy(W: tensor[hyperedges](float), inout tri : HyperEdge) -> 
-					(E: float)
+func compute_energy(inout tri : HyperEdge) 
+				-> (E: tensor[hyperedges](float))
 
-	E = W(tri) * tri.init_area;
-
+	tri.energy = tri.energyDensity * tri.init_area;
+	E(tri) = tri.energy;
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 func compute_dstrain_dDphi(inout tri: HyperEdge, p : (Point*3)) 
 
 	%calculate dE/Dɸ (4x4)
 	var dE = [	0.0, 0.0, 0.0, 0.0;
-			0.0, 0.0, 0.0, 0.0;
-			0.0, 0.0, 0.0, 0.0;
-			0.0, 0.0, 0.0, 0.0	];
+				0.0, 0.0, 0.0, 0.0;
+				0.0, 0.0, 0.0, 0.0;
+				0.0, 0.0, 0.0, 0.0	];
 	dE(0,0) = (2.0*tri.dPhi(0,0));
 	dE(0,2) = (2.0*tri.dPhi(1,0));
 	dE(1,0) = tri.dPhi(0,1);
@@ -223,15 +180,9 @@ func compute_dstrain_dDphi(inout tri: HyperEdge, p : (Point*3))
 	dE(3,1) = (2.0*tri.dPhi(0,1));
 	dE(3,3) = (2.0*tri.dPhi(1,1));
 	tri.dStrain = dE/2.0;
-
-%print tri.dStrain;
-
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 func compute_dEnergyDensity_dStrain(inout tri: HyperEdge) 
-
-alpha = 1e4;
-beta = 1e4;
 
 	var dW = [	0.0, 0.0, 0.0, 0.0  ];
 	dW(0) = alpha*2.0*tri.strain(0,0) + beta*trace2x2(tri.strain);
@@ -249,12 +200,7 @@ func compute_dEnergy(inout tri : HyperEdge, p : (Point*3))
 	dE_tri = tri.init_area * tri.dEnergyDensity' * 
 		 	 tri.dStrain * tri.dDphi;
 	tri.dEnergy = dE_tri';
-println "tri.dEnergy: ",tri.dEnergy;		
 end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%func compute_T_i(tri: HyperEdge, p: (Point*3)) -> 
-%	(T_i : tensor[hyperedges](tensor[3,points](tensor[2,2](float))))
-%end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 func create_dEnergy_matrix(tri : HyperEdge, p : (Point*3)) ->
 							(dE : tensor[points](tensor[2](float)))
@@ -264,235 +210,92 @@ func create_dEnergy_matrix(tri : HyperEdge, p : (Point*3)) ->
 	dE(p(1))(0) = tri.dEnergy(2) ;
 	dE(p(1))(1) = tri.dEnergy(3) ;
 	dE(p(2))(0) = tri.dEnergy(4) ;
-	dE(p(2))(1) = tri.dEnergy(5) ;
-
-print "\n** dE (1x6) = \n";
-print dE;
-
-	
-end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-func compute_inverse_mass(tri : HyperEdge, p : (Point*3)) ->
-					(Minv : tensor[points,points](tensor[2,2](float)))
-  I2 = [1.0, 0.0; 0.0, 1.0];
-  Minv(p(0),p(0)) = (1.0/(tri.mass/3.0)) * I2;
-  Minv(p(1),p(1)) = (1.0/(tri.mass/3.0)) * I2;
-  Minv(p(2),p(2)) = (1.0/(tri.mass/3.0)) * I2;
+	dE(p(2))(1) = tri.dEnergy(5) ;	
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 func compute_mass(tri : HyperEdge, p : (Point*3)) ->
 					(M : tensor[points,points](tensor[2,2](float)))
+
   I2 = [1.0, 0.0; 0.0, 1.0];
-  M(p(0),p(0)) = ((tri.mass/3.0)) * I2;
-  M(p(1),p(1)) = ((tri.mass/3.0)) * I2;
-  M(p(2),p(2)) = ((tri.mass/3.0)) * I2;
-end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-func print_csv1(tri: HyperEdge, p: (Point * 3))
-
-	%position of v1 – v3
-	print   p(0).position(0), ",", p(0).position(1), ",",
-			p(1).position(0), ",", p(1).position(1), ",",
-			p(2).position(0), ",", p(2).position(1), ",";			
-
-	%dPhi
-	print tri.dPhi(0,0),",",tri.dPhi(0,1),",",tri.dPhi(1,0),",",
-			tri.dPhi(1,1),",";
-
-	%dDphi(dv)
-	print tri.dDphi(0,0),",",tri.dDphi(0,1),",",tri.dDphi(0,2),",",
-			tri.dDphi(0,3),",",tri.dDphi(0,4),",",tri.dDphi(0,5),",";
-	print tri.dDphi(1,0),",",tri.dDphi(1,1),",",tri.dDphi(1,2),",",
-			tri.dDphi(1,3),",",tri.dDphi(1,4),",",tri.dDphi(1,5),",";
-	print tri.dDphi(2,0),",",tri.dDphi(2,1),",",tri.dDphi(2,2),",",
-			tri.dDphi(2,3),",",tri.dDphi(2,4),",",tri.dDphi(2,5),",";
-	print tri.dDphi(3,0),",",tri.dDphi(3,1),",",tri.dDphi(3,2),",",
-			tri.dDphi(3,3),",",tri.dDphi(3,4),",",tri.dDphi(3,5),",";
-			
-	%strain
-	print tri.strain(0,0),",",tri.strain(0,1),",",tri.strain(1,0),",",
-			tri.strain(1,1),",";
-	
-	%dstrain
-	print tri.dStrain(0,0),",",tri.dStrain(0,1),",",
-		  tri.dStrain(0,2),",",tri.dStrain(0,3),",";
-	print tri.dStrain(1,0),",",tri.dStrain(1,1),",",
-		  tri.dStrain(1,2),",",tri.dStrain(1,3),",";
-	print tri.dStrain(2,0),",",tri.dStrain(2,1),",",
-		  tri.dStrain(2,2),",",tri.dStrain(2,3),",";
-	print tri.dStrain(3,0),",",tri.dStrain(3,1),",",
-		  tri.dStrain(3,2),",",tri.dStrain(3,3),",";
-		
-end
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-func print_csv2(tri: HyperEdge, p: (Point * 3))
-
-
-
-	%energy 
-	print tri.energy,",";
-	
-	%dE (1x6)
-	print tri.dEnergy(0), ",", tri.dEnergy(1), ",",
-		  tri.dEnergy(2), ",", tri.dEnergy(3), ",",
-		  tri.dEnergy(4), ",", tri.dEnergy(5), ",";
-	
-	print "\n";
-	
-end
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-func print_csv3(tri: HyperEdge, p: (Point * 3))
-
-	dv1 = p(0).position-p(0).prev_position;
-	dv2 = p(1).position-p(1).prev_position;
-	dv3 = p(2).position-p(2).prev_position;
-	
-	var dv = [1.0;1.0;1.0;1.0;1.0;1.0];
-	dv(0,0) = dv1(0);
-	dv(0,1) = dv1(1);
-	dv(0,2) = dv2(0);
-	dv(0,3) = dv2(1);
-	dv(0,4) = dv3(0);
-	dv(0,5) = dv3(1);
-	
-%{	println dv;
-	println "dStrain * dDphi * dv";
-	println tri.dStrain * tri.dDphi * dv;
-	println "prev strain:";
-	println tri.prev_strain;
-	println "strain:";
-	println tri.strain;
-	println "strain-prev strain:";
-	println (tri.strain - tri.prev_strain);
-
-	print "\n";
-%}
-
-	println "dW * dStrain * dDphi * dv";
-	println  tri.dEnergyDensity' * (tri.dStrain * tri.dDphi * dv);
-	println "W_i+1 - W_i";
-	println (tri.energyDensity-tri.prev_energyDensity);
-	println "====";
-end
-
-%%%%
-func debug(inout tri: HyperEdge, p: (Point * 3))
-
-	tri.prev_strain = tri.strain;
+  if (p(0).pinned)
+  	M(p(0),p(0)) = 0.0 * I2;	
+  else
+	M(p(0),p(0)) = ((tri.mass/3.0)) * I2;
+  end
+  if (p(1).pinned)
+  	M(p(1),p(1)) = 0.0 * I2;	
+  else
+	M(p(1),p(1)) = ((tri.mass/3.0)) * I2;
+  end
+  if (p(2).pinned)
+  	M(p(2),p(2)) = 0.0 * I2;
+  else
+    M(p(2),p(2)) = ((tri.mass/3.0)) * I2;
+  end
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%% INTERFACE %%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 proc init
-    hyperedges.init_area = map precompute_area to hyperedges;
-println "area: ",hyperedges.init_area;
-    map precompute_dDphi_dV to hyperedges;
-    print "v1.x,","v1.y,","v2.x,","v2.y,","v3.x,","v3.y,";
-	print "dPhi(11),","dPhi(12),","dPhi(21),","dPhi(22),";
-	print  "dDphi(11),","dDphi(12),","dDphi(13),", 	
-		   "dDphi(14),","dDphi(15),","dDphi(16),";
-	print  "dDphi(21),","dDphi(22),","dDphi(23),", 	
-		   "dDphi(24),","dDphi(25),","dDphi(26),";
-	print  "dDphi(31),","dDphi(32),","dDphi(33),", 	
-		   "dDphi(34),","dDphi(35),","dDphi(36),";
-	print  "dDphi(41),","dDphi(42),","dDphi(43),", 	
-		   "dDphi(44),","dDphi(45),","dDphi(46),";
-		   
-	print "strain(11),","strain(12),","strain(21),","strain(22),";
-	print "dStrain(11),","dstrain(12),","dstrain(13),","dstrain(14),";
-	print "dStrain(21),","dstrain(22),","dstrain(23),","dstrain(24),";
-	print "dStrain(31),","dstrain(32),","dstrain(33),","dstrain(34),";
-	print "dStrain(41),","dstrain(42),","dstrain(43),","dstrain(44),";
-   
-    print "E,","dE(1),","dE(2),","dE(3),",
-    	  "dE(4),","dE(5),","dE(6),","\n";
 
+    hyperedges.init_area = map precompute_area to hyperedges;
+    hyperedges.mass = hyperedges.init_area * massperunitarea;
+    map precompute_dDphi_dV to hyperedges;
+	println " ";
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 proc main
 	
-    h = 1e-3;
-
-	% for print (point x)
+  % for print (point x)
     map compute_dPhi to hyperedges;	
     map compute_strain_tensor to hyperedges;	
     map compute_dstrain_dDphi to hyperedges;
- %  	map print_csv1 to hyperedges;
-
-	map debug to hyperedges; %DEBUG
- 	points.prev_position = points.position;	%DEBUG
- 	hyperedges.prev_energyDensity = hyperedges.energyDensity;	%DEBUG
- 	
+	
     points.position = points.position + h * points.velocity;	
     
-    % for dE calculation (point x+1)
-    Minv = map compute_inverse_mass to hyperedges reduce +;
+  % for dE calculation (point x+1)
+    M = map compute_mass to hyperedges reduce +;
+
+  % compute inverse Mass Matrix
+	var Minv : tensor[points,points](tensor[2,2](float));
+    Minv = M;
+    for p in points
+    	if (p.pinned)
+    		Minv(p,p)(0,0) = M(p,p)(0,0);
+    		Minv(p,p)(1,1) = M(p,p)(1,1);
+		else
+    		Minv(p,p)(0,0) = 1.0/M(p,p)(0,0);
+		   	Minv(p,p)(1,1) = 1.0/M(p,p)(1,1);
+		end
+    end
     map compute_dPhi to hyperedges;	
     map compute_strain_tensor to hyperedges;	
     map compute_dstrain_dDphi to hyperedges;
-    
-    W = map compute_energy_density to hyperedges; 
-println "W :",W;
-%	E = map compute_energy(W) to hyperedges reduce +;
-%println "E: ",E;
-	M = map compute_mass to hyperedges reduce +;	
-%	print "Mass\n",M,"\n";
-%	print "V'V\n",((points.velocity)'*(points.velocity)),"\n";
-%	print "0.5*V'V\n",0.5*((points.velocity)'*M*(points.velocity)),"\n";	
-	KE = 0.5* (points.velocity)'*M*(points.velocity);
+    map compute_energy_density to hyperedges; 
 
-%print"\nPositions :\n";
-%print points.position;
-
-%print"\n\nKE :\n";
-%print KE,",";
-%print"\nE :\n";
-%print E,",";
-%print "\n(E+KE):\n";
-%print (E+KE),",";
+	E = map compute_energy to hyperedges reduce +;
+	
+  %% DEBUG energy out
+	var system_pot_energy : float;
+	for i in hyperedges
+		system_pot_energy = system_pot_energy + E(i);
+	end
+	var system_kinetic_energy : float;
+	system_kinetic_energy = 0.5* (points.velocity)'*M*(points.velocity);
+	println ((system_pot_energy)+(system_kinetic_energy));
 	
 	map compute_dEnergyDensity_dStrain to hyperedges;
 	map compute_dEnergy to hyperedges reduce +;
 	
 	dE = map create_dEnergy_matrix to hyperedges reduce +;
-println "dE: ",dE;
-    points.velocity = points.velocity - (h * Minv * dE);
-println "force: ",(h * Minv*dE);
-  % 	map print_csv2(Wold) to hyperedges;
-
-%	map print_csv3 to hyperedges;
-
-
-%{
-print "\narea (1x1) = ";
-print tri.init_area; 
-print "\n\ndEnergyDensity (1x4) = \n";
-print tri.dEnergyDensity'  ;
-print "\n\ndStrain (4x4) = \n";
-print tri.dStrain;
-print "\n\ndDphi (4x6) = \n";
-print tri.dDphi;
-print "\n\n**** dEnergy (1x6) = \n";
-print tri.dEnergy';
-print "\n";
-print "\n** strain (2x2) = \n";
-print tri.strain;
-print "\n** dPhi (2x2) = \n";
-print tri.dPhi;
-print "\n\npoints.velocity: \n";
-print points.velocity;
-%}
-
+	g = map compute_g to points;
+    points.velocity = points.velocity 
+    				  - (h * Minv * dE) 
+    				  - (h * Minv * g);
 end
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%
-%%%%%%%%%%%
-%%%%%%%%%%%%
 % NOTES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 % ∂E = 	∑ 	A_i	∂W 	∂ε 	∂Dɸ T_i
@@ -520,7 +323,4 @@ end
 %			...							v̅2.y
 %			...							v̅3.x
 %			...					]		v̅3.y	
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% ⊥ = U+22A5
-% overline = U+0305
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
